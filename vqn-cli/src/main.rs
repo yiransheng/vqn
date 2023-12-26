@@ -120,8 +120,11 @@ async fn run_server(global: &GlobalOpts, args: &ServerOpts) -> anyhow::Result<()
 
     let iface = Iface::new("tun0").context("failed to create a tun interface")?;
 
+    let mut server = vqn_core::Server::new(iface);
+
     // TODO: for testing prototype only
-    vqn_core::server(certs(&args.cert)?, iface, endpoint).await?;
+    server.add_peer(certs(&args.cert)?, [("10.10.0.3".parse().unwrap(), 32)]);
+    server.run(endpoint).await?;
 
     Ok(())
 }

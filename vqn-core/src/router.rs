@@ -1,4 +1,3 @@
-use std::eprintln;
 use std::sync::{Arc, Weak};
 use std::{collections::HashMap, net::IpAddr};
 
@@ -19,7 +18,6 @@ impl Router {
         key: Vec<Certificate>,
         iter: impl IntoIterator<Item = (IpAddr, u8)>,
     ) {
-        dbg!(&key);
         self.allowed_ips
             .entry(key)
             .or_default()
@@ -27,11 +25,9 @@ impl Router {
     }
 
     pub async fn connect(&self, conn: Connection) -> Arc<Connection> {
-        eprintln!("connect router..");
         let certs = conn
             .peer_identity()
             .and_then(|ident| ident.downcast::<Vec<Certificate>>().ok());
-        dbg!(&certs);
 
         let conn = Arc::new(conn);
 
@@ -47,7 +43,6 @@ impl Router {
             .flat_map(|ips| ips.iter())
         {
             let conn = Arc::downgrade(&conn);
-            eprintln!("insert: {ip}/{cidr}");
             connections.insert(ip, cidr, conn);
         }
 

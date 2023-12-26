@@ -1,5 +1,5 @@
 use std::io;
-use std::{net::IpAddr, str::FromStr, sync::Arc};
+use std::{net::IpAddr, sync::Arc};
 
 use async_tun::TunPacketCodec;
 use bytes::Bytes;
@@ -29,34 +29,54 @@ pub enum Error {
     Conn(#[from] ConnectionError),
 }
 
-pub async fn server(cert: Vec<Certificate>, tun: Iface, endpoint: Endpoint) -> Result<(), Error> {
-    let mut router = Router::default();
-    router.add_peer(cert, [(IpAddr::from_str("10.10.0.3").unwrap(), 32)]);
+pub struct Server {
+    tun: Iface,
+    router: Router,
+}
 
-    let (tx, rx) = mpsc::channel::<Bytes>(32);
-
-    let router = Arc::new(router);
-    let r = Arc::clone(&router);
-
-    tokio::spawn(async move {
-        while let Some(conn) = endpoint.accept().await {
-            let router = Arc::clone(&router);
-            let tx = tx.clone();
-            tokio::spawn(async move {
-                let conn = conn.await.unwrap();
-                let conn = router.connect(conn).await;
-
-                while let Ok(dgram) = conn.read_datagram().await {
-                    let _ = tx.send(dgram).await;
-                }
-            });
+impl Server {
+    pub fn new(tun: Iface) -> Self {
+        Self {
+            tun,
+            router: Router::default(),
         }
-    });
+    }
 
-    let jh = tokio::spawn(async move { tun_loop(tun, r, rx).await });
-    jh.await.unwrap()?;
+    pub fn add_peer(
+        &mut self,
+        cert_chain: Vec<Certificate>,
+        allowed_ips: impl IntoIterator<Item = (IpAddr, u8)>,
+    ) {
+        self.router.add_peer(cert_chain, allowed_ips);
+    }
 
-    Ok(())
+    pub async fn run(self, endpoint: Endpoint) -> Result<(), Error> {
+        let (tx, rx) = mpsc::channel::<Bytes>(32);
+
+        let Server { tun, router } = self;
+        let router = Arc::new(router);
+        let r = Arc::clone(&router);
+
+        tokio::spawn(async move {
+            while let Some(conn) = endpoint.accept().await {
+                let router = Arc::clone(&router);
+                let tx = tx.clone();
+                tokio::spawn(async move {
+                    let conn = conn.await.unwrap();
+                    let conn = router.connect(conn).await;
+
+                    while let Ok(dgram) = conn.read_datagram().await {
+                        let _ = tx.send(dgram).await;
+                    }
+                });
+            }
+        });
+
+        let jh = tokio::spawn(async move { tun_loop(tun, r, rx).await });
+        jh.await.unwrap()?;
+
+        Ok(())
+    }
 }
 
 async fn tun_loop(
