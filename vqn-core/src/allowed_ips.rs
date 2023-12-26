@@ -18,16 +18,6 @@ impl<T> Default for AllowedIps<T> {
 }
 
 impl<D> AllowedIps<D> {
-    pub fn new() -> Self {
-        Self {
-            ips: IpNetworkTable::new(),
-        }
-    }
-
-    pub fn clear(&mut self) {
-        self.ips = IpNetworkTable::new();
-    }
-
     pub fn insert(&mut self, key: IpAddr, cidr: u8, data: D) -> Option<D> {
         self.ips.insert(
             IpNetwork::new_truncate(key, cidr).expect("cidr is valid length"),
@@ -37,10 +27,6 @@ impl<D> AllowedIps<D> {
 
     pub fn get(&self, key: IpAddr) -> Option<&D> {
         self.ips.longest_match(key).map(|(_net, data)| data)
-    }
-
-    pub fn remove(&mut self, predicate: &dyn Fn(&D) -> bool) {
-        self.ips.retain(|_, v| !predicate(v));
     }
 
     pub fn iter(&self) -> Iter<D> {

@@ -5,8 +5,9 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{anyhow, bail, Context};
-use clap::{Args, Parser, Subcommand};
+use anyhow::{anyhow, Context};
+use clap::{Parser, Subcommand};
+use quinn::TransportConfig;
 use url::Url;
 
 use vqn_core::Iface;
@@ -94,7 +95,7 @@ async fn run_server(global: &GlobalOpts, args: &ServerOpts) -> anyhow::Result<()
         roots.add(cert)?;
     }
 
-    let client_cert_verifier = rustls::server::AllowAnyAuthenticatedClient::new(roots.into());
+    let client_cert_verifier = rustls::server::AllowAnyAuthenticatedClient::new(roots);
     let server_crypto = rustls::ServerConfig::builder()
         .with_safe_defaults()
         .with_client_cert_verifier(client_cert_verifier.boxed())
@@ -113,7 +114,7 @@ async fn run_server(global: &GlobalOpts, args: &ServerOpts) -> anyhow::Result<()
     let iface = Iface::new("tun0").context("failed to create a tun interface")?;
 
     // TODO: for testing prototype only
-    vqn_core::server(certs(&args.cert)?, iface, endpoint).await;
+    vqn_core::server(certs(&args.cert)?, iface, endpoint).await?;
 
     Ok(())
 }
@@ -135,7 +136,14 @@ async fn run_client(global: &GlobalOpts, args: &ClientOpts) -> anyhow::Result<()
         .with_root_certificates(roots)
         .with_client_auth_cert(cert_chain, client_key)?;
 
-    let client_config = quinn::ClientConfig::new(Arc::new(client_crypto));
+    let mut transport_config = TransportConfig::default();
+    transport_config
+        .initial_mtu(1420)
+        .keep_alive_interval(Some(Duration::from_secs(25)));
+
+    let mut client_config = quinn::ClientConfig::new(Arc::new(client_crypto));
+    client_config.transport_config(Arc::new(transport_config));
+
     let mut endpoint = quinn::Endpoint::client("[::]:0".parse().unwrap())?;
     endpoint.set_default_client_config(client_config);
 
@@ -155,7 +163,7 @@ async fn run_client(global: &GlobalOpts, args: &ClientOpts) -> anyhow::Result<()
 
     eprintln!("connected to {host} at {remote}");
 
-    vqn_core::tunnel(iface, conn).await;
+    vqn_core::client(iface, conn).await?;
 
     Ok(())
 }

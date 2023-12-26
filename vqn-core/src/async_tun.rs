@@ -1,5 +1,4 @@
-use std::assert_eq;
-use std::io::{self, IoSlice, Read, Write};
+use std::io::{self};
 use std::sync::Arc;
 
 use bytes::{BufMut, Bytes, BytesMut};
