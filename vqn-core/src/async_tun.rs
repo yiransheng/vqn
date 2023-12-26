@@ -20,13 +20,6 @@ impl Iface {
         Self::from_sync(iface)
     }
 
-    pub fn try_clone(&self) -> io::Result<Self> {
-        let inner = self.inner.get_ref();
-        Ok(Self {
-            inner: AsyncFd::new(Arc::clone(inner))?,
-        })
-    }
-
     pub fn into_framed(self, mtu: usize) -> Framed<Self, TunPacketCodec> {
         let codec = TunPacketCodec::new(mtu);
         Framed::new(self, codec)

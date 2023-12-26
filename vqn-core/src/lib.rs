@@ -1,6 +1,7 @@
 use std::io;
 use std::{net::IpAddr, str::FromStr, sync::Arc};
 
+use async_tun::TunPacketCodec;
 use bytes::Bytes;
 use futures::{SinkExt, StreamExt};
 use packet::ip::Packet;
@@ -17,6 +18,7 @@ mod router;
 pub use async_tun::Iface;
 
 use router::Router;
+use tokio_util::codec::Framed;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -97,24 +99,34 @@ async fn tun_loop(
     }
 }
 
-pub async fn client(tun: Iface, conn: Connection) -> Result<(), Error> {
-    let mut framed = tun.into_framed(1360);
+pub struct Client {
+    tun: Framed<Iface, TunPacketCodec>,
+}
 
-    loop {
-        select! {
-            Some(ip_pkt) = framed.next() => {
-                let ip_pkt = ip_pkt.unwrap();
-                tracing::trace!("packet size ->: {}", ip_pkt.len());
+impl Client {
+    pub fn new(tun: Iface, mtu: usize) -> Self {
+        Self {
+            tun: tun.into_framed(mtu),
+        }
+    }
 
-                if let Err(SendDatagramError::ConnectionLost(err)) = conn.send_datagram(ip_pkt) {
-                    return Err(err.into());
+    pub async fn run(&mut self, conn: Connection) -> Result<(), Error> {
+        loop {
+            select! {
+                Some(ip_pkt) = self.tun.next() => {
+                    let ip_pkt = ip_pkt.unwrap();
+                    tracing::trace!("packet size ->: {}", ip_pkt.len());
+
+                    if let Err(SendDatagramError::ConnectionLost(err)) = conn.send_datagram(ip_pkt) {
+                        return Err(err.into());
+                    }
                 }
-            }
-            dgram = conn.read_datagram() => {
-                let dgram = dgram?;
-                tracing::trace!("packet size <-: {}", dgram.len());
+                dgram = conn.read_datagram() => {
+                    let dgram = dgram?;
+                    tracing::trace!("packet size <-: {}", dgram.len());
 
-                framed.send(dgram).await?;
+                    self.tun.send(dgram).await?;
+                }
             }
         }
     }

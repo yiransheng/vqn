@@ -164,14 +164,24 @@ async fn run_client(global: &GlobalOpts, args: &ClientOpts) -> anyhow::Result<()
         .host_str()
         .ok_or_else(|| anyhow!("no hostname specified"))?;
     eprintln!("connecting to {host} at {remote}");
-    let conn = endpoint
-        .connect(remote, host)?
-        .await
-        .map_err(|e| anyhow!("failed to connect: {}", e))?;
 
-    eprintln!("connected to {host} at {remote}");
+    let mut client = vqn_core::Client::new(iface, 1500);
 
-    vqn_core::client(iface, conn).await?;
+    loop {
+        let conn = endpoint
+            .connect(remote, host)?
+            .await
+            .map_err(|e| anyhow!("failed to connect: {}", e))?;
+
+        eprintln!("connected to {host} at {remote}");
+
+        if let Err(vqn_core::Error::Conn(_)) = client.run(conn).await {
+            // reconnect
+            continue;
+        } else {
+            break;
+        }
+    }
 
     Ok(())
 }
