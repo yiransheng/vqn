@@ -8,6 +8,7 @@ use std::{
 use anyhow::{anyhow, Context};
 use clap::{Parser, Subcommand};
 use quinn::TransportConfig;
+use tracing::Level;
 use url::Url;
 
 use vqn_core::Iface;
@@ -26,6 +27,9 @@ pub struct App {
 struct GlobalOpts {
     #[clap(long = "ca-cert")]
     ca_cert: PathBuf,
+
+    #[arg(long)]
+    log_level: Option<Level>,
 }
 
 #[derive(Debug, Parser)]
@@ -59,10 +63,13 @@ enum Command {
 }
 
 fn main() {
-    tracing::subscriber::set_global_default(tracing_subscriber::FmtSubscriber::builder().finish())
-        .unwrap();
-
     let args = App::parse();
+    tracing::subscriber::set_global_default(
+        tracing_subscriber::FmtSubscriber::builder()
+            .with_max_level(args.global_opts.log_level.unwrap_or(Level::INFO))
+            .finish(),
+    )
+    .unwrap();
     let code = {
         if let Err(e) = run(args) {
             eprintln!("ERROR: {e}");
@@ -105,9 +112,9 @@ async fn run_server(global: &GlobalOpts, args: &ServerOpts) -> anyhow::Result<()
 
     let mut server_config = quinn::ServerConfig::with_crypto(Arc::new(server_crypto));
     let transport_config = Arc::get_mut(&mut server_config.transport).unwrap();
-    transport_config.max_idle_timeout(Some(Duration::from_secs(60).try_into()?));
+    transport_config.max_idle_timeout(Some(Duration::from_secs(120).try_into()?));
     transport_config.max_concurrent_uni_streams(0_u8.into());
-    transport_config.initial_mtu(1420);
+    transport_config.initial_mtu(1360);
 
     let endpoint = quinn::Endpoint::server(server_config, args.listen)?;
 
@@ -138,8 +145,9 @@ async fn run_client(global: &GlobalOpts, args: &ClientOpts) -> anyhow::Result<()
 
     let mut transport_config = TransportConfig::default();
     transport_config
-        .initial_mtu(1420)
-        .keep_alive_interval(Some(Duration::from_secs(25)));
+        .initial_mtu(1360)
+        .max_idle_timeout(Some(Duration::from_secs(120).try_into()?))
+        .keep_alive_interval(Some(Duration::from_secs(15)));
 
     let mut client_config = quinn::ClientConfig::new(Arc::new(client_crypto));
     client_config.transport_config(Arc::new(transport_config));

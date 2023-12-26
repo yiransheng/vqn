@@ -29,7 +29,7 @@ pub enum Error {
 
 pub async fn server(cert: Vec<Certificate>, tun: Iface, endpoint: Endpoint) -> Result<(), Error> {
     let mut router = Router::default();
-    router.add_peer(cert, [(IpAddr::from_str("10.10.0.3").unwrap(), 24)]);
+    router.add_peer(cert, [(IpAddr::from_str("10.10.0.3").unwrap(), 32)]);
 
     let (tx, rx) = mpsc::channel::<Bytes>(32);
 
@@ -76,7 +76,11 @@ async fn tun_loop(
                         continue;
                     },
                 };
+
+
                 if let Some(conn) = router.lookup(dst_ip).await {
+                    tracing::trace!("sening {} to {dst_ip}", ip_pkt.len());
+
                     if let Err(SendDatagramError::ConnectionLost(err)) = conn.send_datagram(ip_pkt) {
                         return Err(err.into());
                     }
@@ -94,18 +98,22 @@ async fn tun_loop(
 }
 
 pub async fn client(tun: Iface, conn: Connection) -> Result<(), Error> {
-    let mut framed = tun.into_framed(1500);
+    let mut framed = tun.into_framed(1360);
 
     loop {
         select! {
             Some(ip_pkt) = framed.next() => {
                 let ip_pkt = ip_pkt.unwrap();
+                tracing::trace!("packet size ->: {}", ip_pkt.len());
+
                 if let Err(SendDatagramError::ConnectionLost(err)) = conn.send_datagram(ip_pkt) {
                     return Err(err.into());
                 }
             }
             dgram = conn.read_datagram() => {
                 let dgram = dgram?;
+                tracing::trace!("packet size <-: {}", dgram.len());
+
                 framed.send(dgram).await?;
             }
         }
