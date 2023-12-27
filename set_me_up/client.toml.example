@@ -1,0 +1,15 @@
+[tls]
+key = "./client-key.pem"
+cert = "./client-cert.pem"
+ca_cert = "./ca-cert.pem"
+
+[network]
+name = "tun0"
+role = "client"
+address = "10.10.0.3/24"
+fwmark = 19988 
+mtu = 1364
+
+[network.server]
+url = "https://www.vqn.org:10086"
+allowed_ips = "0.0.0.0/0,::/0"
