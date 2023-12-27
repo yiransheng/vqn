@@ -2,4 +2,7 @@
 /Cargo.lock
 
 *.pem
+/client.toml
+/server.toml
+
 
