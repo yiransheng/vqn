@@ -8,11 +8,13 @@ use std::{
 use anyhow::{anyhow, Context};
 use clap::Parser;
 use quinn::TransportConfig;
+use tokio::signal::unix::{signal, SignalKind};
 use tracing::Level;
 
 use vqn_core::Iface;
 
 mod conf;
+mod firewall;
 
 use conf::{ClientPeer, Conf, Network, ServerPeer};
 
@@ -28,7 +30,7 @@ pub struct Args {
 
 const DEFAULT_LISTEN_PORT: u16 = 10086;
 const DEFAULT_MTU: usize = 1344;
-const DEFAULT_TUN_NAME: &'static str = "tun0";
+const DEFAULT_TUN_NAME: &str = "tun0";
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
@@ -71,6 +73,15 @@ fn create_tun(network: &Network) -> anyhow::Result<Iface> {
 #[tokio::main]
 async fn run(conf: Conf) -> anyhow::Result<()> {
     let iface = create_tun(&conf.network)?;
+
+    firewall::dev_up(&conf);
+
+    // insufficient.., too racey
+    let conf2 = conf.clone();
+    tokio::spawn(async move {
+        handle_signals(&conf2).await;
+    });
+
     match &conf.network {
         Network::Server {
             client,
@@ -119,8 +130,9 @@ async fn run_server(
 
     let mut server_config = quinn::ServerConfig::with_crypto(Arc::new(server_crypto));
     let transport_config = Arc::get_mut(&mut server_config.transport).unwrap();
-    transport_config.max_idle_timeout(Some(Duration::from_secs(120).try_into()?));
-    transport_config.max_concurrent_uni_streams(0_u8.into());
+    transport_config
+        .max_idle_timeout(Some(Duration::from_secs(120).try_into()?))
+        .max_concurrent_uni_streams(0_u8.into());
 
     let listen = SocketAddr::from(([0, 0, 0, 0], listen_port));
     let endpoint = vqn_core::rt::server_endpoint(server_config, listen, fwmark)?;
@@ -234,4 +246,28 @@ fn certs(cert_path: &Path) -> anyhow::Result<Vec<rustls::Certificate>> {
         .collect();
 
     Ok(cert_chain)
+}
+
+async fn handle_signals(conf: &Conf) {
+    let mut sigint = signal(SignalKind::interrupt()).expect("Failed to register SIGINT handler");
+    let mut sigterm = signal(SignalKind::terminate()).expect("Failed to register SIGTERM handler");
+    let mut sighup = signal(SignalKind::hangup()).expect("Failed to register SIGHUP handler");
+
+    tokio::select! {
+        _ = sigint.recv() => {
+            tracing::info!("Received SIGINT");
+            firewall::dev_down(conf);
+            std::process::exit(0);
+        },
+        _ = sigterm.recv() => {
+            tracing::info!("Received SIGTERM");
+            firewall::dev_down(conf);
+            std::process::exit(0);
+        },
+            _ = sighup.recv() => {
+            tracing::info!("Received SIGHUP");
+            firewall::dev_down(conf);
+            std::process::exit(0);
+        },
+    }
 }

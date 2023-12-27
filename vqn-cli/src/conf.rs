@@ -4,7 +4,7 @@ use std::{net::IpAddr, path::PathBuf};
 use serde::{de, Deserialize, Deserializer};
 use url::Url;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Conf {
     pub network: Network,
     pub tls: Tls,
@@ -16,14 +16,14 @@ impl Conf {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Tls {
     pub key: PathBuf,
     pub cert: PathBuf,
     pub ca_cert: PathBuf,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "role")]
 pub enum Network {
     #[serde(rename = "server")]
@@ -61,6 +61,13 @@ impl Network {
         }
     }
 
+    pub fn fwmark(&self) -> Option<u32> {
+        match self {
+            Network::Server { fwmark, .. } => *fwmark,
+            Network::Client { fwmark, .. } => *fwmark,
+        }
+    }
+
     pub fn name(&self) -> Option<&str> {
         match self {
             Network::Server { name, .. } => name.as_deref(),
@@ -69,14 +76,14 @@ impl Network {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ClientPeer {
     pub client_cert: PathBuf,
 
     pub allowed_ips: AllowedIps,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ServerPeer {
     pub url: Url,
     pub allowed_ips: AllowedIps,
@@ -114,7 +121,7 @@ impl Cidr {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AllowedIps {
     pub values: Vec<Cidr>,
 }

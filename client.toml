@@ -11,4 +11,4 @@ fwmark = 19988
 
 [network.server]
 url = "https://www.vqn.org:10086"
-allowed_ips = "10.10.0.0/24"
+allowed_ips = "0.0.0.0/0,::/0"

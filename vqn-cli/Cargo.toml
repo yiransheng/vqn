@@ -13,7 +13,7 @@ tracing-subscriber = { workspace = true }
 clap = { version = "^4.4.8", features = ["derive"] }
 quinn = { workspace = true } 
 vqn-core = { path = "../vqn-core" }
-tokio = { workspace = true, features = ["rt-multi-thread"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "signal"] }
 rustls-pemfile = { workspace = true } 
 rustls = { workspace = true }
 serde = { workspace = true }
