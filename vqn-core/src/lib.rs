@@ -112,10 +112,8 @@ async fn tun_loop(
                     tracing::trace!("dropping packet, no route for {dst_ip}");
                 }
             }
-            dgram = peer_packets.recv() => {
-                if let Some(dgram) = dgram {
-                    framed.send(dgram).await?;
-                }
+            Some(dgram) = peer_packets.recv() => {
+                framed.send(dgram).await?;
             }
         }
     }

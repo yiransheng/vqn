@@ -74,7 +74,7 @@ fn create_tun(network: &Network) -> anyhow::Result<Iface> {
 async fn run(conf: Conf) -> anyhow::Result<()> {
     let iface = create_tun(&conf.network)?;
 
-    firewall::dev_up(&conf);
+    firewall::dev_up(&conf).context("failed start up firewall configuration sequence")?;
 
     // insufficient.., too racey
     let conf2 = conf.clone();
