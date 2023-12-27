@@ -15,4 +15,4 @@ quinn = { workspace = true }
 vqn-core = { path = "../vqn-core" }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 rustls-pemfile = { workspace = true } 
-rustls = { workspace = "true" }
+rustls = { workspace = true }

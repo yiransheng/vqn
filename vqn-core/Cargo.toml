@@ -7,14 +7,13 @@ edition = "2021"
 
 [dependencies]
 quinn = { workspace = true } 
-# rustls = { version = "0.21.0", default-features = false, features = ["quic"] }
-tun = { version = "0.6.1", features = ["async"] }
+tun = { version = "0.6.1" }
 bytes = { workspace = true }
 tracing = { workspace = true }
 tokio-util = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["macros"] }
 futures = { workspace = true }
-rustls = { workspace = "true" }
+rustls = { workspace = true }
 ip_network = "0.4.1"
 ip_network_table = "0.2.0"
 thiserror = "1.0.50"
