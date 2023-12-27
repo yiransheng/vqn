@@ -1,5 +1,4 @@
-use std::io::{self};
-use std::sync::Arc;
+use std::io;
 
 use bytes::{BufMut, Bytes, BytesMut};
 use core::pin::Pin;
@@ -10,7 +9,7 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio_util::codec::{Decoder, Encoder, Framed};
 
 pub struct Iface {
-    inner: AsyncFd<Arc<tun_tap::Iface>>,
+    inner: AsyncFd<tun_tap::Iface>,
 }
 
 impl Iface {
@@ -34,7 +33,7 @@ impl Iface {
         dev.set_non_blocking()?;
 
         Ok(Self {
-            inner: AsyncFd::new(Arc::new(dev))?,
+            inner: AsyncFd::new(dev)?,
         })
     }
 }
@@ -43,7 +42,7 @@ impl std::ops::Deref for Iface {
     type Target = tun_tap::Iface;
 
     fn deref(&self) -> &Self::Target {
-        self.inner.get_ref().deref()
+        self.inner.get_ref()
     }
 }
 
