@@ -14,6 +14,7 @@ mod allowed_ips;
 mod async_tun;
 mod router;
 
+pub mod rt;
 pub use async_tun::Iface;
 pub use tun;
 

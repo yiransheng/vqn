@@ -7,6 +7,7 @@ ca_cert = "./ca-cert.pem"
 name = "tun0"
 role = "client"
 address = "10.10.0.3/24"
+fwmark = 19988 
 
 [network.server]
 url = "https://www.vqn.org:10086"

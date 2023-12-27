@@ -12,7 +12,7 @@ set -x
 # ip link set up dev tun0
 # ip link set dev tun0 mtu 1344
 
-ip -4 route add 20.27.0.0/16 dev tun0 table 19988
+ip -4 route add 0.0.0.0/0 dev tun0 table 19988
 ip -4 rule add not fwmark 19988 table 19988
 ip -4 rule add table main suppress_prefixlength 0
 resolvectl dns tun0 1.1.1.1

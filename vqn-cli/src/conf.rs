@@ -33,6 +33,7 @@ pub enum Network {
         mtu: Option<usize>,
         port: Option<u16>,
         client: Vec<ClientPeer>,
+        fwmark: Option<u32>,
     },
 
     #[serde(rename = "client")]
@@ -41,6 +42,7 @@ pub enum Network {
         address: Cidr,
         mtu: Option<usize>,
         server: ServerPeer,
+        fwmark: Option<u32>,
     },
 }
 

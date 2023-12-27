@@ -72,16 +72,24 @@ fn create_tun(network: &Network) -> anyhow::Result<Iface> {
 async fn run(conf: Conf) -> anyhow::Result<()> {
     let iface = create_tun(&conf.network)?;
     match &conf.network {
-        Network::Server { client, port, .. } => {
+        Network::Server {
+            client,
+            port,
+            fwmark,
+            ..
+        } => {
             run_server(
                 iface,
                 port.unwrap_or(DEFAULT_LISTEN_PORT),
+                *fwmark,
                 &conf.tls,
                 client,
             )
             .await?
         }
-        Network::Client { server, .. } => run_client(iface, &conf.tls, server).await?,
+        Network::Client { server, fwmark, .. } => {
+            run_client(iface, *fwmark, &conf.tls, server).await?
+        }
     }
 
     Ok(())
@@ -90,6 +98,7 @@ async fn run(conf: Conf) -> anyhow::Result<()> {
 async fn run_server(
     iface: Iface,
     listen_port: u16,
+    fwmark: Option<u32>,
     tls_config: &conf::Tls,
     clients: &[ClientPeer],
 ) -> anyhow::Result<()> {
@@ -114,7 +123,7 @@ async fn run_server(
     transport_config.max_concurrent_uni_streams(0_u8.into());
 
     let listen = SocketAddr::from(([0, 0, 0, 0], listen_port));
-    let endpoint = quinn::Endpoint::server(server_config, listen)?;
+    let endpoint = vqn_core::rt::server_endpoint(server_config, listen, fwmark)?;
     tracing::info!("listening at {}", listen);
 
     let mut server = vqn_core::Server::new(iface);
@@ -130,6 +139,7 @@ async fn run_server(
 
 async fn run_client(
     iface: Iface,
+    fwmark: Option<u32>,
     tls_config: &conf::Tls,
     server: &ServerPeer,
 ) -> anyhow::Result<()> {
@@ -155,7 +165,7 @@ async fn run_client(
     let mut client_config = quinn::ClientConfig::new(Arc::new(client_crypto));
     client_config.transport_config(Arc::new(transport_config));
 
-    let mut endpoint = quinn::Endpoint::client("[::]:0".parse().unwrap())?;
+    let mut endpoint = vqn_core::rt::client_endpoint("[::]:0".parse().unwrap(), fwmark)?;
     endpoint.set_default_client_config(client_config);
 
     let url = &server.url;
