@@ -30,6 +30,7 @@ impl Iface {
             dev.mode(),
             "only Tun is supported for now"
         );
+        // NOTE: very important!! easy to forget to set this...
         dev.set_non_blocking()?;
 
         Ok(Self {
