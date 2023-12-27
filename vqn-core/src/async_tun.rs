@@ -9,6 +9,7 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio_util::codec::{Decoder, Encoder, Framed};
 use tun::platform::Device;
 
+/// An async tun interface.
 pub struct Iface {
     inner: AsyncFd<Device>,
 }
@@ -32,6 +33,15 @@ impl Iface {
     pub fn into_framed(self, mtu: usize) -> Framed<Self, TunPacketCodec> {
         let codec = TunPacketCodec::new(mtu);
         Framed::new(self, codec)
+    }
+}
+
+impl std::ops::Deref for Iface {
+    type Target = Device;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        self.inner.get_ref()
     }
 }
 

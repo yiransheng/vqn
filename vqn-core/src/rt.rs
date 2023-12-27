@@ -1,3 +1,6 @@
+//! This module provides custom constructors for `quinn` [Endpoint]s,
+//! exposing the option to set `fwmark` on all tunnel traffic managed by `vqn`. This
+//! is the same trick employed by WireGuard to prevent routing loops.
 use std::io;
 use std::net::SocketAddr;
 

@@ -20,6 +20,7 @@ pub use tun;
 
 use router::Router;
 use tokio_util::codec::Framed;
+use tun::Device;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -30,12 +31,16 @@ pub enum Error {
     Conn(#[from] ConnectionError),
 }
 
+/// Represents a VPN server, often used as a NAT (Network Address Translation) device.
+/// It supports multiple clients, with each client requiring upfront configuration.
+/// The server uses one QUIC connection per client.
 pub struct Server {
     tun: Iface,
     router: Router,
 }
 
 impl Server {
+    /// Constructs a new Server instance with a specified tun [Iface].
     pub fn new(tun: Iface) -> Self {
         Self {
             tun,
@@ -43,7 +48,9 @@ impl Server {
         }
     }
 
-    pub fn add_peer(
+    /// Configures a client, including their TLS certificate chain and permitted IP ranges.
+    /// Client connections are identified identified by their TLS certificates.
+    pub fn add_client(
         &mut self,
         cert_chain: Vec<Certificate>,
         allowed_ips: impl IntoIterator<Item = (IpAddr, u8)>,
@@ -51,6 +58,8 @@ impl Server {
         self.router.add_peer(cert_chain, allowed_ips);
     }
 
+    /// Asynchronously runs the server using a specified QUIC [Endpoint]
+    /// The function handles incoming connections and routes traffic through the tun interface.
     pub async fn run(self, endpoint: Endpoint) -> Result<(), Error> {
         let (tx, rx) = mpsc::channel::<Bytes>(32);
 
@@ -119,17 +128,35 @@ async fn tun_loop(
     }
 }
 
+/// Represents a VPN client that handles packet transmission between
+/// a local interface and a VPN connection.
 pub struct Client {
     tun: Framed<Iface, TunPacketCodec>,
 }
 
 impl Client {
-    pub fn new(tun: Iface, mtu: usize) -> Self {
-        Self {
-            tun: tun.into_framed(mtu),
-        }
+    // Creates a new `Client` instance with a specified network interface ([Iface])
+    ///
+    /// - `tun`: The network interface to be used by the client.
+    pub fn new(tun: Iface) -> tun::Result<Self> {
+        let mtu = tun.mtu()?;
+
+        Ok(Self {
+            tun: tun.into_framed(mtu as usize),
+        })
     }
 
+    /// Asynchronously runs the client, managing the transmission of packets between the local tun interface and
+    ///  the VPN connection.
+    ///
+    /// This method continuously listens for packets from both the local network interface and the VPN connection,
+    /// forwarding them appropriately. It handles both incoming and outgoing traffic, wrapping and unwrapping packets
+    /// as required.
+    ///
+    /// - `conn`: The VPN connection used for sending and receiving datagrams.
+    /// - Returns: A result indicating success (`Ok`) or an error (`Err`).
+    ///
+    /// The method will run indefinitely until an error occurs or the connection is lost.
     pub async fn run(&mut self, conn: Connection) -> Result<(), Error> {
         loop {
             select! {

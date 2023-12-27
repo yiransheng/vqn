@@ -141,7 +141,7 @@ async fn run_server(
     let mut server = vqn_core::Server::new(iface);
     for client in clients {
         tracing::info!("adding a client with allowed ips: {}", &client.allowed_ips);
-        server.add_peer(certs(&client.client_cert)?, client.allowed_ips.iter())
+        server.add_client(certs(&client.client_cert)?, client.allowed_ips.iter())
     }
 
     server.run(endpoint).await?;
@@ -190,7 +190,7 @@ async fn run_client(
         .ok_or_else(|| anyhow!("no hostname specified"))?;
     tracing::info!("connecting to {host} at {remote}");
 
-    let mut client = vqn_core::Client::new(iface, 1500);
+    let mut client = vqn_core::Client::new(iface)?;
 
     loop {
         let conn = endpoint
