@@ -1,0 +1,13 @@
+[tls]
+key = "./server-key.pem"
+cert = "./server-cert.pem"
+ca_cert = "./ca-cert.pem"
+
+[network]
+name = "tun0"
+role = "client"
+address = "10.10.0.3/24"
+
+[network.server]
+url = "https://www.vqn.org:10086"
+allowed_ips = "10.10.0.0/24"

@@ -59,6 +59,8 @@ impl Server {
 
         tokio::spawn(async move {
             while let Some(conn) = endpoint.accept().await {
+                tracing::info!("incoming connection: {}", conn.remote_address());
+
                 let router = Arc::clone(&router);
                 let tx = tx.clone();
                 tokio::spawn(async move {

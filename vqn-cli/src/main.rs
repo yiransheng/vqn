@@ -6,75 +6,46 @@ use std::{
 };
 
 use anyhow::{anyhow, Context};
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use quinn::TransportConfig;
 use tracing::Level;
-use url::Url;
 
 use vqn_core::Iface;
 
 mod conf;
 
+use conf::{ClientPeer, Conf, Network, ServerPeer};
+
 #[derive(Debug, Parser)]
 #[clap(name = "vqn", version)]
-pub struct App {
-    #[clap(flatten)]
-    global_opts: GlobalOpts,
-
-    #[clap(subcommand)]
-    command: Command,
-}
-
-#[derive(Debug, Parser)]
-struct GlobalOpts {
-    #[clap(long = "ca-cert")]
-    ca_cert: PathBuf,
+pub struct Args {
+    #[arg(long)]
+    config: PathBuf,
 
     #[arg(long)]
     log_level: Option<Level>,
 }
 
-#[derive(Debug, Parser)]
-struct ServerOpts {
-    #[clap(long)]
-    key: PathBuf,
+const DEFAULT_LISTEN_PORT: u16 = 10086;
+const DEFAULT_MTU: usize = 1344;
+const DEFAULT_TUN_NAME: &'static str = "tun0";
 
-    #[clap(long)]
-    cert: PathBuf,
-
-    #[clap(long, short)]
-    listen: SocketAddr,
-}
-
-#[derive(Debug, Parser)]
-struct ClientOpts {
-    #[clap(long)]
-    key: PathBuf,
-
-    #[clap(long)]
-    cert: PathBuf,
-
-    #[clap(long)]
-    url: Url,
-}
-
-#[derive(Debug, Subcommand)]
-enum Command {
-    Server(ServerOpts),
-    Client(ClientOpts),
-}
-
-fn main() {
-    let args = App::parse();
+fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
     tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(args.global_opts.log_level.unwrap_or(Level::INFO))
+            .with_max_level(args.log_level.unwrap_or(Level::INFO))
             .finish(),
     )
     .unwrap();
+
+    let conf =
+        std::fs::read_to_string(&args.config).with_context(|| "failed to read config file")?;
+    let conf = Conf::parse_from(&conf).with_context(|| "failed to parse config file")?;
+
     let code = {
-        if let Err(e) = run(args) {
-            eprintln!("ERROR: {e}");
+        if let Err(e) = run(conf) {
+            eprintln!("{e}");
             1
         } else {
             0
@@ -84,22 +55,49 @@ fn main() {
     std::process::exit(code);
 }
 
+fn create_tun(network: &Network) -> anyhow::Result<Iface> {
+    let mut config = vqn_core::tun::Configuration::default();
+    config
+        .name(network.name().unwrap_or(DEFAULT_TUN_NAME))
+        .address(network.address().ip())
+        .netmask(network.address().netmask())
+        .mtu(network.mtu().unwrap_or(DEFAULT_MTU) as i32)
+        .up();
+    let iface = Iface::new(config).context("failed to create a tun interface")?;
+
+    Ok(iface)
+}
+
 #[tokio::main]
-async fn run(args: App) -> anyhow::Result<()> {
-    match args.command {
-        Command::Server(ref opts) => run_server(&args.global_opts, opts).await?,
-        Command::Client(ref opts) => run_client(&args.global_opts, opts).await?,
+async fn run(conf: Conf) -> anyhow::Result<()> {
+    let iface = create_tun(&conf.network)?;
+    match &conf.network {
+        Network::Server { client, port, .. } => {
+            run_server(
+                iface,
+                port.unwrap_or(DEFAULT_LISTEN_PORT),
+                &conf.tls,
+                client,
+            )
+            .await?
+        }
+        Network::Client { server, .. } => run_client(iface, &conf.tls, server).await?,
     }
 
     Ok(())
 }
 
-async fn run_server(global: &GlobalOpts, args: &ServerOpts) -> anyhow::Result<()> {
-    let server_key = key(&args.key)?;
-    let cert_chain = certs(&args.cert)?;
+async fn run_server(
+    iface: Iface,
+    listen_port: u16,
+    tls_config: &conf::Tls,
+    clients: &[ClientPeer],
+) -> anyhow::Result<()> {
+    let server_key = key(&tls_config.key)?;
+    let cert_chain = certs(&tls_config.cert)?;
 
     let mut roots = rustls::RootCertStore::empty();
-    let ca_certs = certs(&global.ca_cert)?;
+    let ca_certs = certs(&tls_config.ca_cert)?;
     for cert in &ca_certs {
         roots.add(cert)?;
     }
@@ -110,49 +108,36 @@ async fn run_server(global: &GlobalOpts, args: &ServerOpts) -> anyhow::Result<()
         .with_client_cert_verifier(client_cert_verifier.boxed())
         .with_single_cert(cert_chain, server_key)?;
 
-    // server_crypto.alpn_protocols = quinn::ALPN_QUIC_HTTP.iter().map(|&x| x.into()).collect();
-
     let mut server_config = quinn::ServerConfig::with_crypto(Arc::new(server_crypto));
     let transport_config = Arc::get_mut(&mut server_config.transport).unwrap();
     transport_config.max_idle_timeout(Some(Duration::from_secs(120).try_into()?));
     transport_config.max_concurrent_uni_streams(0_u8.into());
-    transport_config.initial_mtu(1360);
 
-    let endpoint = quinn::Endpoint::server(server_config, args.listen)?;
-
-    let mut config = vqn_core::tun::Configuration::default();
-    config
-        .name("tun0")
-        .address((10, 10, 0, 1))
-        .netmask((255, 255, 255, 0))
-        .mtu(1344)
-        .up();
-    let iface = Iface::new(config).context("failed to create a tun interface")?;
+    let listen = SocketAddr::from(([0, 0, 0, 0], listen_port));
+    let endpoint = quinn::Endpoint::server(server_config, listen)?;
+    tracing::info!("listening at {}", listen);
 
     let mut server = vqn_core::Server::new(iface);
+    for client in clients {
+        tracing::info!("adding a client with allowed ips: {}", &client.allowed_ips);
+        server.add_peer(certs(&client.client_cert)?, client.allowed_ips.iter())
+    }
 
-    // TODO: for testing prototype only
-    server.add_peer(certs(&args.cert)?, [("10.10.0.3".parse().unwrap(), 32)]);
     server.run(endpoint).await?;
 
     Ok(())
 }
 
-async fn run_client(global: &GlobalOpts, args: &ClientOpts) -> anyhow::Result<()> {
-    let mut config = vqn_core::tun::Configuration::default();
-    config
-        .name("tun0")
-        .address((10, 10, 0, 3))
-        .netmask((255, 255, 255, 0))
-        .mtu(1344)
-        .up();
-    let iface = Iface::new(config).context("failed to create a tun interface")?;
-
-    let client_key = key(&args.key)?;
-    let cert_chain = certs(&args.cert)?;
+async fn run_client(
+    iface: Iface,
+    tls_config: &conf::Tls,
+    server: &ServerPeer,
+) -> anyhow::Result<()> {
+    let client_key = key(&tls_config.key)?;
+    let cert_chain = certs(&tls_config.cert)?;
 
     let mut roots = rustls::RootCertStore::empty();
-    let ca_certs = certs(&global.ca_cert)?;
+    let ca_certs = certs(&tls_config.ca_cert)?;
     for cert in &ca_certs {
         roots.add(cert)?;
     }
@@ -164,7 +149,6 @@ async fn run_client(global: &GlobalOpts, args: &ClientOpts) -> anyhow::Result<()
 
     let mut transport_config = TransportConfig::default();
     transport_config
-        .initial_mtu(1360)
         .max_idle_timeout(Some(Duration::from_secs(120).try_into()?))
         .keep_alive_interval(Some(Duration::from_secs(15)));
 
@@ -174,15 +158,15 @@ async fn run_client(global: &GlobalOpts, args: &ClientOpts) -> anyhow::Result<()
     let mut endpoint = quinn::Endpoint::client("[::]:0".parse().unwrap())?;
     endpoint.set_default_client_config(client_config);
 
-    let url = &args.url;
-    let remote = (url.host_str().unwrap(), url.port().unwrap_or(4433))
+    let url = &server.url;
+    let remote = (url.host_str().unwrap(), url.port().unwrap_or(443))
         .to_socket_addrs()?
         .next()
         .ok_or_else(|| anyhow!("couldn't resolve to an address"))?;
     let host = url
         .host_str()
         .ok_or_else(|| anyhow!("no hostname specified"))?;
-    eprintln!("connecting to {host} at {remote}");
+    tracing::info!("connecting to {host} at {remote}");
 
     let mut client = vqn_core::Client::new(iface, 1500);
 
@@ -192,7 +176,7 @@ async fn run_client(global: &GlobalOpts, args: &ClientOpts) -> anyhow::Result<()
             .await
             .map_err(|e| anyhow!("failed to connect: {}", e))?;
 
-        eprintln!("connected to {host} at {remote}");
+        tracing::info!("connected to {host} at {remote}");
 
         if let Err(vqn_core::Error::Conn(_)) = client.run(conn).await {
             // reconnect
@@ -206,7 +190,8 @@ async fn run_client(global: &GlobalOpts, args: &ClientOpts) -> anyhow::Result<()
 }
 
 fn key(key_path: &Path) -> anyhow::Result<rustls::PrivateKey> {
-    let key = std::fs::read(key_path).context("failed to read private key")?;
+    let key = std::fs::read(key_path)
+        .with_context(|| format!("failed to read private key: {}", key_path.to_string_lossy()))?;
     let pkcs8 =
         rustls_pemfile::pkcs8_private_keys(&mut &*key).context("malformed PKCS #8 private key")?;
     let key = match pkcs8.into_iter().next() {
@@ -226,7 +211,12 @@ fn key(key_path: &Path) -> anyhow::Result<rustls::PrivateKey> {
 }
 
 fn certs(cert_path: &Path) -> anyhow::Result<Vec<rustls::Certificate>> {
-    let cert_chain = std::fs::read(cert_path).context("failed to read certificate chain")?;
+    let cert_chain = std::fs::read(cert_path).with_context(|| {
+        format!(
+            "failed to certificate chain: {}",
+            cert_path.to_string_lossy()
+        )
+    })?;
     let cert_chain: Vec<_> = rustls_pemfile::certs(&mut &*cert_chain)
         .context("invalid PEM-encoded certificate")?
         .into_iter()
