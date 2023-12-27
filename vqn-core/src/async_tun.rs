@@ -1,4 +1,4 @@
-use std::io;
+use std::io::{self, IoSlice, Read, Write};
 
 use bytes::{BufMut, Bytes, BytesMut};
 use core::pin::Pin;
@@ -7,43 +7,31 @@ use futures::ready;
 use tokio::io::unix::AsyncFd;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio_util::codec::{Decoder, Encoder, Framed};
+use tun::platform::Device;
 
 pub struct Iface {
-    inner: AsyncFd<tun_tap::Iface>,
+    inner: AsyncFd<Device>,
 }
 
 impl Iface {
-    pub fn new(tun_name: &str) -> io::Result<Self> {
-        let iface = tun_tap::Iface::without_packet_info(tun_name, tun_tap::Mode::Tun)?;
+    pub fn new(mut config: tun::Configuration) -> tun::Result<Self> {
+        #[cfg(target_os = "linux")]
+        config.platform(|config| {
+            config.packet_information(false);
+        });
 
-        Self::from_sync(iface)
-    }
-
-    pub fn into_framed(self, mtu: usize) -> Framed<Self, TunPacketCodec> {
-        let codec = TunPacketCodec::new(mtu);
-        Framed::new(self, codec)
-    }
-
-    fn from_sync(dev: tun_tap::Iface) -> io::Result<Self> {
-        debug_assert_eq!(
-            tun_tap::Mode::Tun,
-            dev.mode(),
-            "only Tun is supported for now"
-        );
-        // NOTE: very important!! easy to forget to set this...
-        dev.set_non_blocking()?;
+        let dev = tun::create(&config)?;
+        // NOTE: easy to forget and leads to unpredictable meltdowns of async runtime
+        dev.set_nonblock()?;
 
         Ok(Self {
             inner: AsyncFd::new(dev)?,
         })
     }
-}
 
-impl std::ops::Deref for Iface {
-    type Target = tun_tap::Iface;
-
-    fn deref(&self) -> &Self::Target {
-        self.inner.get_ref()
+    pub fn into_framed(self, mtu: usize) -> Framed<Self, TunPacketCodec> {
+        let codec = TunPacketCodec::new(mtu);
+        Framed::new(self, codec)
     }
 }
 
@@ -57,7 +45,7 @@ impl AsyncRead for Iface {
             let mut guard = ready!(self.inner.poll_read_ready_mut(cx))?;
             let rbuf = buf.initialize_unfilled();
 
-            match guard.try_io(|inner| inner.get_ref().recv(rbuf)) {
+            match guard.try_io(|inner| inner.get_mut().read(rbuf)) {
                 Ok(res) => return Poll::Ready(res.map(|n| buf.advance(n))),
                 Err(_wb) => continue,
             }
@@ -73,7 +61,7 @@ impl AsyncWrite for Iface {
     ) -> Poll<io::Result<usize>> {
         loop {
             let mut guard = ready!(self.inner.poll_write_ready_mut(cx))?;
-            match guard.try_io(|inner| inner.get_ref().send(buf)) {
+            match guard.try_io(|inner| inner.get_mut().write(buf)) {
                 Ok(res) => return Poll::Ready(res),
                 Err(_wb) => continue,
             }
@@ -81,13 +69,35 @@ impl AsyncWrite for Iface {
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let _guard = ready!(self.inner.poll_write_ready_mut(cx))?;
-
-        Poll::Ready(Ok(()))
+        loop {
+            let mut guard = ready!(self.inner.poll_write_ready_mut(cx))?;
+            match guard.try_io(|inner| inner.get_mut().flush()) {
+                Ok(res) => return Poll::Ready(res),
+                Err(_wb) => continue,
+            }
+        }
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         Poll::Ready(Ok(()))
+    }
+
+    fn poll_write_vectored(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[IoSlice<'_>],
+    ) -> Poll<Result<usize, io::Error>> {
+        loop {
+            let mut guard = ready!(self.inner.poll_write_ready_mut(cx))?;
+            match guard.try_io(|inner| inner.get_mut().write_vectored(bufs)) {
+                Ok(res) => return Poll::Ready(res),
+                Err(_wb) => continue,
+            }
+        }
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        true
     }
 }
 

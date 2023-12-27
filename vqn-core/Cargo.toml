@@ -9,7 +9,6 @@ edition = "2021"
 quinn = { workspace = true } 
 # rustls = { version = "0.21.0", default-features = false, features = ["quic"] }
 tun = { version = "0.6.1", features = ["async"] }
-tun-tap = { version = "0.1.4" }
 bytes = { workspace = true }
 tracing = { workspace = true }
 tokio-util = { workspace = true }
@@ -17,7 +16,6 @@ tokio = { workspace = true }
 futures = { workspace = true }
 rustls = { workspace = "true" }
 ip_network = "0.4.1"
-packet = "0.1.4"
 ip_network_table = "0.2.0"
 thiserror = "1.0.50"
 

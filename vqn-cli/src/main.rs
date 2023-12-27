@@ -118,7 +118,14 @@ async fn run_server(global: &GlobalOpts, args: &ServerOpts) -> anyhow::Result<()
 
     let endpoint = quinn::Endpoint::server(server_config, args.listen)?;
 
-    let iface = Iface::new("tun0").context("failed to create a tun interface")?;
+    let mut config = vqn_core::tun::Configuration::default();
+    config
+        .name("tun0")
+        .address((10, 10, 0, 1))
+        .netmask((255, 255, 255, 0))
+        .mtu(1344)
+        .up();
+    let iface = Iface::new(config).context("failed to create a tun interface")?;
 
     let mut server = vqn_core::Server::new(iface);
 
@@ -130,7 +137,14 @@ async fn run_server(global: &GlobalOpts, args: &ServerOpts) -> anyhow::Result<()
 }
 
 async fn run_client(global: &GlobalOpts, args: &ClientOpts) -> anyhow::Result<()> {
-    let iface = Iface::new("tun0").context("failed to create a tun interface")?;
+    let mut config = vqn_core::tun::Configuration::default();
+    config
+        .name("tun0")
+        .address((10, 10, 0, 3))
+        .netmask((255, 255, 255, 0))
+        .mtu(1344)
+        .up();
+    let iface = Iface::new(config).context("failed to create a tun interface")?;
 
     let client_key = key(&args.key)?;
     let cert_chain = certs(&args.cert)?;

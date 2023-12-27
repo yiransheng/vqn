@@ -4,7 +4,6 @@ use std::{net::IpAddr, sync::Arc};
 use async_tun::TunPacketCodec;
 use bytes::Bytes;
 use futures::{SinkExt, StreamExt};
-use packet::ip::Packet;
 use quinn::{Connection, ConnectionError, Endpoint, SendDatagramError};
 use rustls::Certificate;
 use thiserror::Error;
@@ -16,6 +15,7 @@ mod async_tun;
 mod router;
 
 pub use async_tun::Iface;
+pub use tun;
 
 use router::Router;
 use tokio_util::codec::Framed;
@@ -90,15 +90,14 @@ async fn tun_loop(
         select! {
             Some(ip_pkt) = framed.next() => {
                 let ip_pkt = ip_pkt?;
-                let pkt = Packet::unchecked(&ip_pkt);
-                let dst_ip: IpAddr = match pkt {
-                    Packet::V4(p) => p.destination().into(),
-                    Packet::V6(_) => {
-                        tracing::warn!("ipv6 not supported");
-                        continue;
-                    },
-                };
 
+                let dst_ip = match ip_dst_address(&ip_pkt) {
+                    Some(addr) => addr,
+                    _ => {
+                        tracing::debug!("unknown ip packet");
+                        continue;
+                    }
+                };
 
                 if let Some(conn) = router.lookup(dst_ip).await {
                     tracing::trace!("sening {} to {dst_ip}", ip_pkt.len());
@@ -149,5 +148,37 @@ impl Client {
                 }
             }
         }
+    }
+}
+
+const IPV4_MIN_HEADER_SIZE: usize = 20;
+const IPV4_DST_IP_OFF: usize = 16;
+const IPV4_IP_SIZE: usize = 4;
+
+const IPV6_MIN_HEADER_SIZE: usize = 40;
+const IPV6_DST_IP_OFF: usize = 24;
+const IPV6_IP_SIZE: usize = 16;
+
+fn ip_dst_address(packet: &[u8]) -> Option<IpAddr> {
+    if packet.is_empty() {
+        return None;
+    }
+
+    match packet[0] >> 4 {
+        4 if packet.len() >= IPV4_MIN_HEADER_SIZE => {
+            let addr_bytes: [u8; IPV4_IP_SIZE] = packet
+                [IPV4_DST_IP_OFF..IPV4_DST_IP_OFF + IPV4_IP_SIZE]
+                .try_into()
+                .unwrap();
+            Some(IpAddr::from(addr_bytes))
+        }
+        6 if packet.len() >= IPV6_MIN_HEADER_SIZE => {
+            let addr_bytes: [u8; IPV6_IP_SIZE] = packet
+                [IPV6_DST_IP_OFF..IPV6_DST_IP_OFF + IPV6_IP_SIZE]
+                .try_into()
+                .unwrap();
+            Some(IpAddr::from(addr_bytes))
+        }
+        _ => None,
     }
 }
