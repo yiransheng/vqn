@@ -13,6 +13,8 @@ use url::Url;
 
 use vqn_core::Iface;
 
+mod conf;
+
 #[derive(Debug, Parser)]
 #[clap(name = "vqn", version)]
 pub struct App {

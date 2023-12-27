@@ -16,4 +16,5 @@ tokio-util = { version = "0.7.10", features = ["codec"] }
 futures = "0.3.30"
 rustls-pemfile = "1.0.0"
 rustls = { version = "0.21.0", default-features = false, features = ["quic"] }
-
+serde = { version = "1.0.0", features = ["derive"] }
+toml = "0.8.8"
