@@ -8,7 +8,7 @@ function step_0() {
 
     if [[ -f "openssl.cnf.example" ]]; then
         sed "s/<mydomain.com>/${domain_name}/g" openssl.cnf.example > openssl.cnf
-        echo "openssl.cnf has been cnfigured with the domain: $domain_name"
+        echo "openssl.cnf has been configured with the domain: $domain_name"
         echo $domain_name > step_0.out
     else
         echo "Error: openssl.cnf.example does not exist."

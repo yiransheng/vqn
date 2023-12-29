@@ -1,12 +1,29 @@
 [tls]
+# Server private key
 key = "./server-key.pem"
+
+# Server certificate. It must be signed by a a certificate authority specified
+# in the `ca_cert` field
 cert = "./server-cert.pem"
+
+# Certification Authority. Must use the same cert on both client and server. 
 ca_cert = "./ca-cert.pem"
 
 [network]
+# Name of the virtual network interface created.
+name = "tun0"
+
+# Signify this is a server.
 role = "server"
+
+# Server private network address.
 address = "10.10.0.1/24"
 
+# Multiple clients allowed.
 [[network.client]]
+# Client certification used for authentication and connection
+# establishment.
 client_cert = "./client-cert.pem"
+
+# Client allowed private IP range.
 allowed_ips = "10.10.0.3/32"

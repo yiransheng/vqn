@@ -1,15 +1,33 @@
 [tls]
+# Client private key
 key = "./client-key.pem"
+
+# Client certificate. It must be signed by a a certificate authority specified
+# in the `ca_cert` field
 cert = "./client-cert.pem"
+
+# Certification Authority. Must use the same cert on both client and server. 
 ca_cert = "./ca-cert.pem"
 
 [network]
+# Name of the virtual network interface created.
 name = "tun0"
+
+# Signify this is a client.
 role = "client"
+
+# Client private network address.
 address = "10.10.0.3/24"
+
+# Firewall mark applied to VQN tunnel traffic to avoid routing loop.
 fwmark = 19988 
 mtu = 1364
 
+# Only one server allowed if role=client.
 [network.server]
+# Server endpoint. You should map this domain name to your server's public IP
+# in `/etc/hosts` to bypass normal DNS.
 url = "https://www.vqn.org:10086"
+
+# Traffic to route through the VPN server.
 allowed_ips = "0.0.0.0/0,::/0"
