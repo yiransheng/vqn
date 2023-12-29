@@ -12,9 +12,10 @@ use quinn::TransportConfig;
 use tokio::signal::unix::{signal, SignalKind};
 use tracing::Level;
 
-use vqn_core::Iface;
+use core::Iface;
 
 mod conf;
+mod core;
 mod firewall;
 
 use conf::{ClientPeer, Conf, Network, ServerPeer};
@@ -59,7 +60,7 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn create_tun(network: &Network) -> anyhow::Result<Iface> {
-    let mut config = vqn_core::tun::Configuration::default();
+    let mut config = core::tun::Configuration::default();
     config
         .name(network.name().unwrap_or(DEFAULT_TUN_NAME))
         .address(network.address().ip())
@@ -138,10 +139,10 @@ async fn run_server(
         .max_concurrent_uni_streams(0_u8.into());
 
     let listen = SocketAddr::from(([0, 0, 0, 0], listen_port));
-    let endpoint = vqn_core::rt::server_endpoint(server_config, listen, fwmark)?;
+    let endpoint = core::rt::server_endpoint(server_config, listen, fwmark)?;
     tracing::info!("listening at {}", listen);
 
-    let mut server = vqn_core::Server::new(iface);
+    let mut server = core::Server::new(iface);
     for client in clients {
         tracing::info!("adding a client with allowed ips: {}", &client.allowed_ips);
         server.add_client(
@@ -184,7 +185,7 @@ async fn run_client(
     let mut client_config = quinn::ClientConfig::new(Arc::new(client_crypto));
     client_config.transport_config(Arc::new(transport_config));
 
-    let mut endpoint = vqn_core::rt::client_endpoint("[::]:0".parse().unwrap(), fwmark)?;
+    let mut endpoint = core::rt::client_endpoint("[::]:0".parse().unwrap(), fwmark)?;
     endpoint.set_default_client_config(client_config);
 
     let url = &server.url;
@@ -197,7 +198,7 @@ async fn run_client(
         .ok_or_else(|| anyhow!("no hostname specified"))?;
     tracing::info!("connecting to {host} at {remote}");
 
-    let mut client = vqn_core::Client::new(iface)?;
+    let mut client = core::Client::new(iface)?;
 
     loop {
         let conn = endpoint
@@ -207,7 +208,7 @@ async fn run_client(
 
         tracing::info!("connected to {host} at {remote}");
 
-        if let Err(vqn_core::Error::Conn(_)) = client.run(conn).await {
+        if let Err(core::Error::Conn(_)) = client.run(conn).await {
             // reconnect
             continue;
         } else {

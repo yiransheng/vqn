@@ -1,14 +1,16 @@
 use std::sync::{Arc, Weak};
 use std::{collections::HashMap, net::IpAddr};
 
-use crate::allowed_ips::AllowedIps;
+use super::allowed_ips::AllowedIps;
 use quinn::Connection;
 use rustls::Certificate;
 use tokio::sync::RwLock;
 
 #[derive(Default)]
 pub struct Router {
+    // map cert_chain -> AllowedIps
     allowed_ips: HashMap<Vec<Certificate>, AllowedIps<()>>,
+    // lookup Connection by IP
     connections: RwLock<AllowedIps<Weak<Connection>>>,
 }
 
