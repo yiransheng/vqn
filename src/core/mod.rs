@@ -74,11 +74,17 @@ impl Server {
                 let router = Arc::clone(&router);
                 let tx = tx.clone();
                 tokio::spawn(async move {
-                    let conn = conn.await.unwrap();
-                    let conn = router.connect(conn).await;
+                    match conn.await {
+                        Ok(conn) => {
+                            let conn = router.connect(conn).await;
 
-                    while let Ok(dgram) = conn.read_datagram().await {
-                        let _ = tx.send(dgram).await;
+                            while let Ok(dgram) = conn.read_datagram().await {
+                                let _ = tx.send(dgram).await;
+                            }
+                        }
+                        Err(err) => {
+                            tracing::trace!("Accept connection error: {err}");
+                        }
                     }
                 });
             }

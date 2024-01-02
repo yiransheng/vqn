@@ -28,7 +28,7 @@ pub fn dev_up(conf: &Conf) -> CmdResult {
         ip -4 rule add table main suppress_prefixlength 0;
         ip -6 rule add not fwmark $fwmark table $routing_table;
         ip -6 rule add table main suppress_prefixlength 0;
-        resolvectl dns tun0 1.1.1.1;
+        resolvectl dns tun0 8.8.8.8 1.1.1.1;
     }
 }
 
