@@ -1,0 +1,14 @@
+[tls]
+key = "./server-key.pem"
+cert = "./server-cert.pem"
+ca_cert = "./ca-cert.pem"
+
+[network]
+name = "tun0"
+role = "server"
+address = "10.10.0.1/24"
+fwmark = 19988 
+
+[[network.client]]
+client_cert = "./client-cert.pem"
+allowed_ips = "10.10.0.3/32"

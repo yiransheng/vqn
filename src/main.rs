@@ -8,6 +8,7 @@ use std::{
 
 use anyhow::{anyhow, Context};
 use clap::Parser;
+use nix::sched::{setns, CloneFlags};
 use quinn::TransportConfig;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::oneshot::{self, Sender};
@@ -29,6 +30,9 @@ pub struct Args {
 
     #[arg(long)]
     log_level: Option<Level>,
+
+    #[arg(long)]
+    netns: Option<String>,
 }
 
 const DEFAULT_LISTEN_PORT: u16 = 10086;
@@ -49,7 +53,7 @@ fn main() -> anyhow::Result<()> {
     let conf = Conf::parse_from(&conf).with_context(|| "failed to parse config file")?;
 
     let code = {
-        if let Err(e) = run(&args.config, conf) {
+        if let Err(e) = run(&args.config, conf, args.netns.as_deref()) {
             eprintln!("{e}");
             1
         } else {
@@ -61,8 +65,8 @@ fn main() -> anyhow::Result<()> {
 }
 
 #[tokio::main]
-async fn run(config_path: &Path, conf: Conf) -> anyhow::Result<()> {
-    let iface = create_tun(&conf.network)?;
+async fn run(config_path: &Path, conf: Conf, netns: Option<&str>) -> anyhow::Result<()> {
+    let iface = create_tun(&conf.network, netns)?;
 
     firewall::dev_up(&conf).context("failed start up firewall configuration sequence")?;
 
@@ -111,7 +115,15 @@ async fn run(config_path: &Path, conf: Conf) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn create_tun(network: &Network) -> anyhow::Result<Iface> {
+fn create_tun(network: &Network, netns: Option<&str>) -> anyhow::Result<Iface> {
+    if let Some(netns) = netns {
+        let fd = std::fs::File::options()
+            .read(true)
+            .write(false)
+            .open(format!("/var/run/netns/{netns}"))?;
+        setns(fd, CloneFlags::CLONE_NEWNET)?;
+    }
+
     let mut config = core::tun::Configuration::default();
     config
         .name(network.name().unwrap_or(DEFAULT_TUN_NAME))
@@ -119,7 +131,7 @@ fn create_tun(network: &Network) -> anyhow::Result<Iface> {
         .netmask(network.address().netmask())
         .mtu(network.mtu().unwrap_or(DEFAULT_MTU) as i32)
         .up();
-    let iface = Iface::new(config).context("failed to create a tun interface")?;
+    let iface = Iface::new(config).with_context(|| "failed to create a tun interface")?;
 
     Ok(iface)
 }
@@ -198,8 +210,10 @@ async fn run_client(
         .to_socket_addrs()?
         .next()
         .ok_or_else(|| anyhow!("couldn't resolve to an address"))?;
-    let host = url
-        .host_str()
+    let host = server
+        .server_name
+        .as_deref()
+        .or(url.host_str())
         .ok_or_else(|| anyhow!("no hostname specified"))?;
     tracing::info!("connecting to {host} at {remote}");
 
@@ -274,9 +288,9 @@ fn certs(config_path: &Path, cert_path: &Path) -> anyhow::Result<Vec<rustls::Cer
 }
 
 async fn handle_signals(shutdown: Sender<()>, conf: &Conf) {
-    let mut sigint = signal(SignalKind::interrupt()).expect("Failed to register SIGINT handler");
-    let mut sigterm = signal(SignalKind::terminate()).expect("Failed to register SIGTERM handler");
-    let mut sighup = signal(SignalKind::hangup()).expect("Failed to register SIGHUP handler");
+    let mut sigint = signal(SignalKind::interrupt()).expect("failed to register SIGINT handler");
+    let mut sigterm = signal(SignalKind::terminate()).expect("failed to register SIGTERM handler");
+    let mut sighup = signal(SignalKind::hangup()).expect("failed to register SIGHUP handler");
 
     tokio::select! {
         _ = sigint.recv() => {

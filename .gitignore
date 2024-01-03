@@ -1,7 +1,7 @@
 /target
 /Cargo.lock
 
-*.pem
+/*.pem
 /client.toml
 /server.toml
 

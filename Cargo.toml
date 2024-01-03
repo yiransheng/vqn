@@ -14,7 +14,7 @@ console-subscriber = "0.1.5"
 futures = "0.3.30"
 ip_network = "0.4.1"
 ip_network_table = "0.2.0"
-nix = { version = "0.27.1", features = ["socket", "event"] }
+nix = { version = "0.27.1", features = ["socket", "sched"] }
 quinn = "0.10.2"
 rustls = { version = "0.21.0", default-features = false, features = ["quic"] }
 rustls-pemfile = "1.0.0"

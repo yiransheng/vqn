@@ -86,6 +86,7 @@ pub struct ClientPeer {
 #[derive(Debug, Clone, Deserialize)]
 pub struct ServerPeer {
     pub url: Url,
+    pub server_name: Option<String>,
     pub allowed_ips: AllowedIps,
 }
 
