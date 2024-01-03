@@ -71,6 +71,7 @@ pub enum Network {
         port: Option<u16>,
         client: Vec<ClientPeer>,
         fwmark: Option<u32>,
+        dns: Option<String>,
     },
 
     #[serde(rename = "client")]
@@ -80,6 +81,7 @@ pub enum Network {
         mtu: Option<usize>,
         server: ServerPeer,
         fwmark: Option<u32>,
+        dns: Option<String>,
     },
 }
 
@@ -109,6 +111,13 @@ impl Network {
         match self {
             Network::Server { name, .. } => name.as_deref(),
             Network::Client { name, .. } => name.as_deref(),
+        }
+    }
+
+    pub fn dns(&self) -> Option<&str> {
+        match self {
+            Network::Server { dns, .. } => dns.as_deref(),
+            Network::Client { dns, .. } => dns.as_deref(),
         }
     }
 }

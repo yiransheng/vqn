@@ -13,11 +13,22 @@ ca_cert = "./ca-cert.pem"
 # Name of the virtual network interface created.
 name = "tun0"
 
+# UDP Port to listen on
+port = 10086
+
 # Signify this is a server.
 role = "server"
 
 # Server private network address.
 address = "10.10.0.1/24"
+
+# Firewall mark applied to VQN tunnel traffic to avoid routing loop.
+fwmark = 19988 
+
+mtu = 1364
+
+# DNS server for the tun interface
+dns = "8.8.8.8 1.1.1.1"
 
 # Multiple clients allowed.
 [[network.client]]
