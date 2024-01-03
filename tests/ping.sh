@@ -48,9 +48,9 @@ down() {
 trap "down" INT TERM
 
 # Ping client from root netns
-ping -c 5 10.10.0.3
+ping -c 5 10.10.0.3 || exit 1
 
 # Ping server from vqnc netns
-ip netns exec vqnc ping -c 5 10.10.0.1 
+ip netns exec vqnc ping -c 5 10.10.0.1 || exit 1
 
 down
