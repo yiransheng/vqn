@@ -39,7 +39,6 @@ pub fn dev_down(conf: &Conf) {
     let _ = run_cmd! {
         ip -4 rule delete not fwmark $fwmark table $routing_table;
         ip -4 rule delete table main suppress_prefixlength 0;
-
         ip -6 rule delete not fwmark $fwmark table $routing_table;
         ip -6 rule delete table main suppress_prefixlength 0;
 

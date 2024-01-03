@@ -10,6 +10,7 @@ use anyhow::{anyhow, Context};
 use clap::Parser;
 use quinn::TransportConfig;
 use tokio::signal::unix::{signal, SignalKind};
+use tokio::sync::oneshot::{self, Sender};
 use tracing::Level;
 
 use core::Iface;
@@ -59,6 +60,57 @@ fn main() -> anyhow::Result<()> {
     std::process::exit(code);
 }
 
+#[tokio::main]
+async fn run(config_path: &Path, conf: Conf) -> anyhow::Result<()> {
+    let iface = create_tun(&conf.network)?;
+
+    firewall::dev_up(&conf).context("failed start up firewall configuration sequence")?;
+
+    let conf2 = conf.clone();
+    let (tx, rx) = oneshot::channel::<()>();
+    let jh = tokio::spawn(async move {
+        handle_signals(tx, &conf2).await;
+    });
+
+    match &conf.network {
+        Network::Server {
+            client,
+            port,
+            fwmark,
+            ..
+        } => {
+            tokio::select! {
+                biased;
+                _ = rx => (),
+                _ = run_server(
+                    config_path,
+                    iface,
+                    port.unwrap_or(DEFAULT_LISTEN_PORT),
+                    *fwmark,
+                    &conf.tls,
+                    client,
+                ) => ()
+            }
+        }
+        Network::Client { server, fwmark, .. } => {
+            tokio::select! {
+                biased;
+                _ = rx => (),
+                _ = run_client(
+                    config_path,
+                    iface,
+                    *fwmark,
+                    &conf.tls,
+                    server
+                ) => ()
+            }
+        }
+    }
+
+    jh.await?;
+    Ok(())
+}
+
 fn create_tun(network: &Network) -> anyhow::Result<Iface> {
     let mut config = core::tun::Configuration::default();
     config
@@ -72,43 +124,6 @@ fn create_tun(network: &Network) -> anyhow::Result<Iface> {
     Ok(iface)
 }
 
-#[tokio::main]
-async fn run(config_path: &Path, conf: Conf) -> anyhow::Result<()> {
-    let iface = create_tun(&conf.network)?;
-
-    firewall::dev_up(&conf).context("failed start up firewall configuration sequence")?;
-
-    // insufficient.., too racey
-    let conf2 = conf.clone();
-    tokio::spawn(async move {
-        handle_signals(&conf2).await;
-    });
-
-    match &conf.network {
-        Network::Server {
-            client,
-            port,
-            fwmark,
-            ..
-        } => {
-            run_server(
-                config_path,
-                iface,
-                port.unwrap_or(DEFAULT_LISTEN_PORT),
-                *fwmark,
-                &conf.tls,
-                client,
-            )
-            .await?
-        }
-        Network::Client { server, fwmark, .. } => {
-            run_client(config_path, iface, *fwmark, &conf.tls, server).await?
-        }
-    }
-
-    Ok(())
-}
-
 async fn run_server(
     config_path: &Path,
     iface: Iface,
@@ -119,12 +134,7 @@ async fn run_server(
 ) -> anyhow::Result<()> {
     let server_key = key(config_path, &tls_config.key)?;
     let cert_chain = certs(config_path, &tls_config.cert)?;
-
-    let mut roots = rustls::RootCertStore::empty();
-    let ca_certs = certs(config_path, &tls_config.ca_cert)?;
-    for cert in &ca_certs {
-        roots.add(cert)?;
-    }
+    let roots = roots(config_path, tls_config)?;
 
     let client_cert_verifier = rustls::server::AllowAnyAuthenticatedClient::new(roots);
     let server_crypto = rustls::ServerConfig::builder()
@@ -165,12 +175,7 @@ async fn run_client(
 ) -> anyhow::Result<()> {
     let client_key = key(config_path, &tls_config.key)?;
     let cert_chain = certs(config_path, &tls_config.cert)?;
-
-    let mut roots = rustls::RootCertStore::empty();
-    let ca_certs = certs(config_path, &tls_config.ca_cert)?;
-    for cert in &ca_certs {
-        roots.add(cert)?;
-    }
+    let roots = roots(config_path, tls_config)?;
 
     let client_crypto = rustls::ClientConfig::builder()
         .with_safe_defaults()
@@ -219,6 +224,16 @@ async fn run_client(
     Ok(())
 }
 
+fn roots(config_path: &Path, tls_config: &conf::Tls) -> anyhow::Result<rustls::RootCertStore> {
+    let mut roots = rustls::RootCertStore::empty();
+    let ca_certs = certs(config_path, &tls_config.ca_cert)?;
+    for cert in &ca_certs {
+        roots.add(cert)?;
+    }
+
+    Ok(roots)
+}
+
 fn key(config_path: &Path, key_path: &Path) -> anyhow::Result<rustls::PrivateKey> {
     let key_path = resolve_path(config_path, key_path)?;
     let key = std::fs::read(&key_path)
@@ -258,7 +273,7 @@ fn certs(config_path: &Path, cert_path: &Path) -> anyhow::Result<Vec<rustls::Cer
     Ok(cert_chain)
 }
 
-async fn handle_signals(conf: &Conf) {
+async fn handle_signals(shutdown: Sender<()>, conf: &Conf) {
     let mut sigint = signal(SignalKind::interrupt()).expect("Failed to register SIGINT handler");
     let mut sigterm = signal(SignalKind::terminate()).expect("Failed to register SIGTERM handler");
     let mut sighup = signal(SignalKind::hangup()).expect("Failed to register SIGHUP handler");
@@ -267,17 +282,17 @@ async fn handle_signals(conf: &Conf) {
         _ = sigint.recv() => {
             tracing::info!("Received SIGINT");
             firewall::dev_down(conf);
-            std::process::exit(0);
+            let _ = shutdown.send(());
         },
         _ = sigterm.recv() => {
             tracing::info!("Received SIGTERM");
             firewall::dev_down(conf);
-            std::process::exit(0);
+            let _ = shutdown.send(());
         },
             _ = sighup.recv() => {
             tracing::info!("Received SIGHUP");
             firewall::dev_down(conf);
-            std::process::exit(0);
+            let _ = shutdown.send(());
         },
     }
 }

@@ -10,6 +10,7 @@ anyhow = "1.0.22"
 bytes = "1.5.0"
 clap = { version = "^4.4.8", features = ["derive"] }
 cmd_lib = "1.9.3"
+console-subscriber = "0.1.5"
 futures = "0.3.30"
 ip_network = "0.4.1"
 ip_network_table = "0.2.0"
@@ -19,8 +20,8 @@ rustls = { version = "0.21.0", default-features = false, features = ["quic"] }
 rustls-pemfile = "1.0.0"
 serde = { version = "1.0.0", features = ["derive"] }
 thiserror = "1.0.50"
-tokio = { version = "1.35.1", features = ["rt-multi-thread", "signal", "macros"] }
-tokio-util = { version = "0.7.10", features = ["codec"] }
+tokio = { version = "1.35.1", features = ["rt-multi-thread", "signal", "macros", "tracing"] }
+tokio-util = { version = "0.7.10", features = ["full", "codec", "tracing"] }
 toml = "0.8.8"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
@@ -35,4 +36,3 @@ path = "src/main.rs"
 lto = true
 # Use only 1 codegen-unit to enable full optimizations.
 codegen-units = 1
-
