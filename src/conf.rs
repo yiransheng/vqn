@@ -1,6 +1,9 @@
+use std::io;
+use std::path::Path;
 use std::str::FromStr;
 use std::{net::IpAddr, path::PathBuf};
 
+use anyhow::{self, Context};
 use serde::{de, Deserialize, Deserializer};
 use url::Url;
 
@@ -11,6 +14,14 @@ pub struct Conf {
 }
 
 impl Conf {
+    pub fn read(path: &Path) -> anyhow::Result<Self> {
+        let conf = std::fs::read_to_string(path).with_context(|| "failed to read config file")?;
+        let mut conf = Self::parse_from(&conf).with_context(|| "failed to parse config file")?;
+        conf.tls.update_relative_paths(path)?;
+
+        Ok(conf)
+    }
+
     pub fn parse_from(s: &str) -> Result<Self, toml::de::Error> {
         toml::from_str(s)
     }
@@ -21,6 +32,32 @@ pub struct Tls {
     pub key: PathBuf,
     pub cert: PathBuf,
     pub ca_cert: PathBuf,
+}
+
+impl Tls {
+    fn update_relative_paths(&mut self, base: &Path) -> io::Result<()> {
+        Self::update_relative_path(base, &mut self.key)?;
+        Self::update_relative_path(base, &mut self.cert)?;
+        Self::update_relative_path(base, &mut self.ca_cert)
+    }
+
+    fn update_relative_path(config: &Path, file: &mut PathBuf) -> io::Result<()> {
+        if !file.is_absolute() {
+            let mut base = if config.is_absolute() {
+                config.to_path_buf()
+            } else {
+                // If 'dir' is a relative path, make it absolute.
+                std::env::current_dir()?.join(config)
+            };
+            if base.is_file() {
+                base.pop();
+            }
+
+            *file = base.join(&file);
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

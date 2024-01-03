@@ -1,7 +1,6 @@
 use std::io;
 use std::{net::IpAddr, sync::Arc};
 
-use async_tun::TunPacketCodec;
 use bytes::Bytes;
 use futures::{SinkExt, StreamExt};
 use quinn::{Connection, ConnectionError, Endpoint, SendDatagramError};
@@ -18,6 +17,7 @@ pub mod rt;
 pub use async_tun::Iface;
 pub use tun;
 
+use async_tun::TunPacketCodec;
 use router::Router;
 use tokio_util::codec::Framed;
 use tun::Device;

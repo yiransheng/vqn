@@ -32,7 +32,7 @@ impl Iface {
 
     pub fn into_framed(self, mtu: usize) -> Framed<Self, TunPacketCodec> {
         let codec = TunPacketCodec::new(mtu);
-        Framed::new(self, codec)
+        Framed::with_capacity(self, codec, mtu * 16)
     }
 }
 

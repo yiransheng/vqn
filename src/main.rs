@@ -1,5 +1,4 @@
 use std::{
-    io,
     net::{SocketAddr, ToSocketAddrs},
     path::{Path, PathBuf},
     sync::Arc,
@@ -48,12 +47,9 @@ fn main() -> anyhow::Result<()> {
     )
     .unwrap();
 
-    let conf =
-        std::fs::read_to_string(&args.config).with_context(|| "failed to read config file")?;
-    let conf = Conf::parse_from(&conf).with_context(|| "failed to parse config file")?;
-
+    let conf = Conf::read(&args.config)?;
     let code = {
-        if let Err(e) = run(&args.config, conf, args.netns.as_deref()) {
+        if let Err(e) = run(conf, args.netns.as_deref()) {
             eprintln!("{e}");
             1
         } else {
@@ -65,7 +61,7 @@ fn main() -> anyhow::Result<()> {
 }
 
 #[tokio::main]
-async fn run(config_path: &Path, conf: Conf, netns: Option<&str>) -> anyhow::Result<()> {
+async fn run(conf: Conf, netns: Option<&str>) -> anyhow::Result<()> {
     let iface = create_tun(&conf.network, netns)?;
 
     firewall::dev_up(&conf).context("failed start up firewall configuration sequence")?;
@@ -87,7 +83,6 @@ async fn run(config_path: &Path, conf: Conf, netns: Option<&str>) -> anyhow::Res
                 biased;
                 _ = rx => (),
                 _ = run_server(
-                    config_path,
                     iface,
                     port.unwrap_or(DEFAULT_LISTEN_PORT),
                     *fwmark,
@@ -101,7 +96,6 @@ async fn run(config_path: &Path, conf: Conf, netns: Option<&str>) -> anyhow::Res
                 biased;
                 _ = rx => (),
                 _ = run_client(
-                    config_path,
                     iface,
                     *fwmark,
                     &conf.tls,
@@ -137,16 +131,15 @@ fn create_tun(network: &Network, netns: Option<&str>) -> anyhow::Result<Iface> {
 }
 
 async fn run_server(
-    config_path: &Path,
     iface: Iface,
     listen_port: u16,
     fwmark: Option<u32>,
     tls_config: &conf::Tls,
     clients: &[ClientPeer],
 ) -> anyhow::Result<()> {
-    let server_key = key(config_path, &tls_config.key)?;
-    let cert_chain = certs(config_path, &tls_config.cert)?;
-    let roots = roots(config_path, tls_config)?;
+    let server_key = key(&tls_config.key)?;
+    let cert_chain = certs(&tls_config.cert)?;
+    let roots = roots(tls_config)?;
 
     let client_cert_verifier = rustls::server::AllowAnyAuthenticatedClient::new(roots);
     let server_crypto = rustls::ServerConfig::builder()
@@ -167,10 +160,7 @@ async fn run_server(
     let mut server = core::Server::new(iface);
     for client in clients {
         tracing::info!("adding a client with allowed ips: {}", &client.allowed_ips);
-        server.add_client(
-            certs(config_path, &client.client_cert)?,
-            client.allowed_ips.iter(),
-        )
+        server.add_client(certs(&client.client_cert)?, client.allowed_ips.iter())
     }
 
     server.run(endpoint).await?;
@@ -179,15 +169,14 @@ async fn run_server(
 }
 
 async fn run_client(
-    config_path: &Path,
     iface: Iface,
     fwmark: Option<u32>,
     tls_config: &conf::Tls,
     server: &ServerPeer,
 ) -> anyhow::Result<()> {
-    let client_key = key(config_path, &tls_config.key)?;
-    let cert_chain = certs(config_path, &tls_config.cert)?;
-    let roots = roots(config_path, tls_config)?;
+    let client_key = key(&tls_config.key)?;
+    let cert_chain = certs(&tls_config.cert)?;
+    let roots = roots(tls_config)?;
 
     let client_crypto = rustls::ClientConfig::builder()
         .with_safe_defaults()
@@ -238,9 +227,9 @@ async fn run_client(
     Ok(())
 }
 
-fn roots(config_path: &Path, tls_config: &conf::Tls) -> anyhow::Result<rustls::RootCertStore> {
+fn roots(tls_config: &conf::Tls) -> anyhow::Result<rustls::RootCertStore> {
     let mut roots = rustls::RootCertStore::empty();
-    let ca_certs = certs(config_path, &tls_config.ca_cert)?;
+    let ca_certs = certs(&tls_config.ca_cert)?;
     for cert in &ca_certs {
         roots.add(cert)?;
     }
@@ -248,9 +237,8 @@ fn roots(config_path: &Path, tls_config: &conf::Tls) -> anyhow::Result<rustls::R
     Ok(roots)
 }
 
-fn key(config_path: &Path, key_path: &Path) -> anyhow::Result<rustls::PrivateKey> {
-    let key_path = resolve_path(config_path, key_path)?;
-    let key = std::fs::read(&key_path)
+fn key(key_path: &Path) -> anyhow::Result<rustls::PrivateKey> {
+    let key = std::fs::read(key_path)
         .with_context(|| format!("failed to read private key: {}", key_path.to_string_lossy()))?;
     let pkcs8 =
         rustls_pemfile::pkcs8_private_keys(&mut &*key).context("malformed PKCS #8 private key")?;
@@ -270,9 +258,8 @@ fn key(config_path: &Path, key_path: &Path) -> anyhow::Result<rustls::PrivateKey
     Ok(key)
 }
 
-fn certs(config_path: &Path, cert_path: &Path) -> anyhow::Result<Vec<rustls::Certificate>> {
-    let cert_path = resolve_path(config_path, cert_path)?;
-    let cert_chain = std::fs::read(&cert_path).with_context(|| {
+fn certs(cert_path: &Path) -> anyhow::Result<Vec<rustls::Certificate>> {
+    let cert_chain = std::fs::read(cert_path).with_context(|| {
         format!(
             "failed to certificate chain: {}",
             cert_path.to_string_lossy()
@@ -308,23 +295,5 @@ async fn handle_signals(shutdown: Sender<()>, conf: &Conf) {
             firewall::dev_down(conf);
             let _ = shutdown.send(());
         },
-    }
-}
-
-fn resolve_path(config: &Path, file: &Path) -> io::Result<PathBuf> {
-    if file.is_absolute() {
-        Ok(file.to_path_buf())
-    } else {
-        let mut base = if config.is_absolute() {
-            config.to_path_buf()
-        } else {
-            // If 'dir' is a relative path, make it absolute.
-            std::env::current_dir()?.join(config)
-        };
-        if base.is_file() {
-            base.pop();
-        }
-
-        Ok(base.join(file))
     }
 }
