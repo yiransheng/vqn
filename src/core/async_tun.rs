@@ -45,6 +45,13 @@ impl std::ops::Deref for Iface {
     }
 }
 
+impl std::ops::DerefMut for Iface {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.inner.get_mut()
+    }
+}
+
 impl AsyncRead for Iface {
     fn poll_read(
         mut self: Pin<&mut Self>,

@@ -1,4 +1,5 @@
 use std::io;
+use std::time::Duration;
 use std::{net::IpAddr, sync::Arc};
 
 use bytes::Bytes;
@@ -166,6 +167,8 @@ impl Client {
     ///
     /// The method will run indefinitely until an error occurs or the connection is lost.
     pub async fn run(&mut self, conn: Connection) -> Result<(), Error> {
+        let mut interval = tokio::time::interval(Duration::from_secs(60));
+
         loop {
             select! {
                 Some(ip_pkt) = self.tun.next() => {
@@ -181,6 +184,16 @@ impl Client {
                     tracing::trace!("packet size <-: {}", dgram.len());
 
                     self.tun.send(dgram).await?;
+                }
+                _ = interval.tick() => if let Some(size) = conn.max_datagram_size() {
+                    let size = size as i32;
+                    let tun = self.tun.get_mut();
+                    let Ok(mtu) = tun.mtu() else {
+                        continue;
+                    };
+                    if size < mtu {
+                        let _ = tun.set_mtu(size);
+                    }
                 }
             }
         }
