@@ -102,7 +102,8 @@ async fn tun_loop(
     router: Arc<Router>,
     mut peer_packets: Receiver<Bytes>,
 ) -> Result<(), Error> {
-    let mut framed = tun.into_framed(1460);
+    let mtu = tun.mtu().unwrap();
+    let mut framed = tun.into_framed(mtu as usize);
 
     loop {
         select! {
@@ -116,6 +117,7 @@ async fn tun_loop(
                         continue;
                     }
                 };
+
 
                 if let Some(conn) = router.lookup(dst_ip).await {
                     tracing::trace!("sening {} to {dst_ip}", ip_pkt.len());

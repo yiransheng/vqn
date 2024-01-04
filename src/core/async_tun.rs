@@ -78,14 +78,8 @@ impl AsyncWrite for Iface {
         }
     }
 
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        loop {
-            let mut guard = ready!(self.inner.poll_write_ready_mut(cx))?;
-            match guard.try_io(|inner| inner.get_mut().flush()) {
-                Ok(res) => return Poll::Ready(res),
-                Err(_wb) => continue,
-            }
-        }
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Poll::Ready(Ok(()))
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {

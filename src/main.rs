@@ -8,10 +8,11 @@ use std::{
 use anyhow::{anyhow, Context};
 use clap::Parser;
 use nix::sched::{setns, CloneFlags};
-use quinn::TransportConfig;
+use quinn::{MtuDiscoveryConfig, TransportConfig};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::oneshot::{self, Sender};
 use tracing::Level;
+use tun::Device;
 
 use core::Iface;
 
@@ -35,7 +36,7 @@ pub struct Args {
 }
 
 const DEFAULT_LISTEN_PORT: u16 = 10086;
-const DEFAULT_MTU: usize = 1344;
+const DEFAULT_MTU: usize = 1434;
 const DEFAULT_TUN_NAME: &str = "tun0";
 
 fn main() -> anyhow::Result<()> {
@@ -151,6 +152,8 @@ async fn run_server(
     let transport_config = Arc::get_mut(&mut server_config.transport).unwrap();
     transport_config
         .max_idle_timeout(Some(Duration::from_secs(120).try_into()?))
+        .initial_mtu(iface.mtu().unwrap() as u16 + 60)
+        .mtu_discovery_config(Some(MtuDiscoveryConfig::default()))
         .max_concurrent_uni_streams(0_u8.into());
 
     let listen = SocketAddr::from(([0, 0, 0, 0], listen_port));
@@ -186,6 +189,8 @@ async fn run_client(
     let mut transport_config = TransportConfig::default();
     transport_config
         .max_idle_timeout(Some(Duration::from_secs(120).try_into()?))
+        .initial_mtu(iface.mtu().unwrap() as u16 + 60)
+        .mtu_discovery_config(Some(MtuDiscoveryConfig::default()))
         .keep_alive_interval(Some(Duration::from_secs(15)));
 
     let mut client_config = quinn::ClientConfig::new(Arc::new(client_crypto));

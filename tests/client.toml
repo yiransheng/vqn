@@ -8,6 +8,7 @@ name = "tun1"
 role = "client"
 address = "10.10.0.3/24"
 fwmark = 19988 
+mtu = 1434
 
 [network.server]
 server_name = "localvqn.org"
