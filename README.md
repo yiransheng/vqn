@@ -14,37 +14,77 @@ An incredibly simple VPN based on the QUIC protocol.
 
 **Simplicity and Pure Rust implementation** VQN is ~1k LOC, and relies on [`quinn`](https://github.com/quinn-rs/quinn) and [`rustls`](https://github.com/rustls/rustls) for all the heavy lifting. The core logic can be digested in a few minutes. It is close to the simplest VPN implementation that could offer enough security and protection for usage over the public Internet (although it is not heavily tested nor audited).
 
+Developed and tested only on Linux.
+
 ## Usage
 
-TODO
+Running:
 
+```bash
+vqn --config server.toml
+```
+
+```bash
+vqn --config client.toml
+```
+
+Example configuration files: [server.toml.example](./set_me_up/server.toml.example) and [client.toml.example](./set_me_up/client.toml.example).
+
+See also: 
+
+* [nat.sh](./set_me_up/nat.sh) for an example NAT wrapper
+* [tests/ping.sh](./tests/ping.sh) for running client in a Linux netns (testing `VQN` on a single machine)
+
+Required TLS certs and keys:
+|                 | Required by server | Required by client | Note                                                                        |
+|-----------------|--------------------|--------------------|-----------------------------------------------------------------------------|
+| ca-cert.pem     | Yes                | Yes                | Certification authority cert.                                               |
+| server-key.pem  | Yes                | No                 | Server private key.                                                         |
+| server-cert.pem | Yes                | No                 | Server cert, signed by the same CA,                                         |
+| client-key.pem  | No                 | Yes                | Client private key.                                                         |
+| client-cert.pem | Yes                | Yes                | Client cert, signed by the same CA. Required on server for identification.  |
+
+Run `make` in the `set_me_up` directory to generate these files.
 
 ## Perf
 
-Direct:
+Performed with `iperf3 -i 0 -c 10.9.0.1 -C cubic -t 20` on a pair of EC2 `t2.micro` instances over vpc. With the same `mtu` 1420 (WireGuard default). 
+
+WireGuard
+
 ```
-Connecting to host www.vqn.org, port 10086
-[  5] local 192.168.10.6 port 57380 connected to 192.0.2.1 port 10086
+Connecting to host 10.9.0.1, port 10088
+[  5] local 10.9.0.3 port 53142 connected to 10.9.0.1 port 10088
 [ ID] Interval           Transfer     Bitrate         Retr  Cwnd
-[  5]   0.00-20.00  sec  30.0 MBytes  12.6 Mbits/sec   11    588 KBytes       
+[  5]   0.00-20.00  sec   579 MBytes   243 Mbits/sec    0   1001 KBytes
 - - - - - - - - - - - - - - - - - - - - - - - - -
 [ ID] Interval           Transfer     Bitrate         Retr
-[  5]   0.00-20.00  sec  30.0 MBytes  12.6 Mbits/sec   11             sender
-[  5]   0.00-20.31  sec  27.3 MBytes  11.3 Mbits/sec                  receiver
-
-iperf Done.
+[  5]   0.00-20.00  sec   579 MBytes   243 Mbits/sec    0             sender
+[  5]   0.00-20.04  sec   577 MBytes   242 Mbits/sec                  receiver
 ```
 
-vqn:
+VQN	
 ```
-Connecting to host 10.10.0.1, port 1024
-[  5] local 10.10.0.3 port 53802 connected to 10.10.0.1 port 1024
+Connecting to host 10.10.0.1, port 10088
+[  5] local 10.10.0.3 port 53882 connected to 10.10.0.1 port 10088
 [ ID] Interval           Transfer     Bitrate         Retr  Cwnd
-[  5]   0.00-20.00  sec  36.8 MBytes  15.4 Mbits/sec   39    607 KBytes       
+[  5]   0.00-20.00  sec   474 MBytes   199 Mbits/sec  1128    221 KBytes
 - - - - - - - - - - - - - - - - - - - - - - - - -
 [ ID] Interval           Transfer     Bitrate         Retr
-[  5]   0.00-20.00  sec  36.8 MBytes  15.4 Mbits/sec   39             sender
-[  5]   0.00-20.30  sec  36.1 MBytes  14.9 Mbits/sec                  receiver
-
-iperf Done.
+[  5]   0.00-20.00  sec   474 MBytes   199 Mbits/sec  1128             sender
+[  5]   0.00-20.05  sec   471 MBytes   197 Mbits/sec                  receiver
 ```
+
+Direct connection
+
+```
+Connecting to host 172.30.2.167, port 10086
+[  5] local 172.30.2.115 port 42210 connected to 172.30.2.167 port 10086
+[ ID] Interval           Transfer     Bitrate         Retr  Cwnd
+[  5]   0.00-20.00  sec  2.28 GBytes   979 Mbits/sec  466    251 KBytes
+- - - - - - - - - - - - - - - - - - - - - - - - -
+[ ID] Interval           Transfer     Bitrate         Retr
+[  5]   0.00-20.00  sec  2.28 GBytes   979 Mbits/sec  466             sender
+[  5]   0.00-20.04  sec  2.28 GBytes   976 Mbits/sec
+```
+

@@ -25,7 +25,7 @@ fwmark = 19988
 mtu = 1434
 
 # DNS server for the tun interface
-dns = "8.8.8.8 1.1.1.1"
+dns = "8.8.8.8"
 
 # Only one server allowed if role=client.
 [network.server]
