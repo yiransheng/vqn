@@ -9,6 +9,7 @@ role = "client"
 address = "10.10.0.3/24"
 fwmark = 19988 
 mtu = 1434
+dns = "1.1.1.1"
 
 [network.server]
 server_name = "localvqn.org"

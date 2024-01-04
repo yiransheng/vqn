@@ -303,6 +303,7 @@ ca_cert = "./ca_cert.pem"
 [network]
 role = "client"
 address = "10.10.0.3/24"
+dns = "1.1.1.1 8.8.8.8"
 
 [network.server]
 url = "https://example.org"

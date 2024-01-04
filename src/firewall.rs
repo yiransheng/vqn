@@ -32,7 +32,7 @@ pub fn dev_up(conf: &Conf) -> CmdResult {
 
     if let Some(dns) = conf.network.dns() {
         run_cmd! {
-            resolvectl dns $tun $dns;
+            resolvectl dns $tun "$dns";
         }
     } else {
         Ok(())

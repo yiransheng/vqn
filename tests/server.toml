@@ -9,6 +9,7 @@ role = "server"
 address = "10.10.0.1/24"
 fwmark = 19988 
 mtu = 1434
+dns = "1.1.1.1"
 
 [[network.client]]
 client_cert = "./client-cert.pem"
